@@ -1,117 +1,124 @@
 const Rule = require('../models/Rule');
+const { evaluate, min, max, sum } = require('mathjs');
+
 
 // Create a new rule
 exports.createRule = async (req, res) => {
-  const { type, parameter, value } = req.body;
-
-  try {
-    // Check if the user already has a rule with the same parameter and type
-    const existingRule = await Rule.findOne({ user: req.user.id, parameter, type });
-
-    if (existingRule) {
-      return res.status(400).json({ message: 'Rule with this parameter and type already exists. Please update the existing rule.' });
+    const { condition } = req.body;
+  
+    try {
+      const existingRule = await Rule.findOne({ user: req.user.id, condition });
+  
+      if (existingRule) {
+        return res.status(400).json({ message: 'Rule with this condition already exists. Please update the existing rule.' });
+      }
+  
+      const rule = new Rule({
+        condition,
+        user: req.user.id
+      });
+  
+      await rule.save();
+      res.json({ message: 'Rule created successfully', rule });
+    } catch (err) {
+      console.error(err.message);
+      res.status(500).send('Server error');
     }
-
-    // Ensure max rules constraint
-    // const existingRules = await Rule.find({ user: req.user.id });
-    // if (existingRules.length >= 10) {
-    //   return res.status(400).json({ message: 'Maximum number of rules reached' });
-    // }
-
-    const rule = new Rule({
-      type,
-      parameter,
-      value,
-      user: req.user.id
-    });
-
-    await rule.save();
-    res.json({ message: 'Rule created successfully', rule });
-  } catch (err) {
-    console.error(err.message);
-    res.status(500).send('Server error');
-  }
-};
+  };
+  
 
 // Update a rule by parameter
-exports.updateRuleByParameter = async (req, res) => {
-  const { parameter } = req.params;
-  const { type, value } = req.body;
-
-  try {
-    const rule = await Rule.findOne({ user: req.user.id, parameter, type });
-
-    if (!rule) {
-      return res.status(404).json({ message: 'Rule not found' });
+exports.updateRuleByCondition = async (req, res) => {
+    const { condition } = req.params;
+    const { newCondition } = req.body;
+  
+    try {
+      const rule = await Rule.findOne({ user: req.user.id, condition });
+  
+      if (!rule) {
+        return res.status(404).json({ message: 'Rule not found' });
+      }
+  
+      rule.condition = newCondition;
+  
+      await rule.save();
+      res.json({ message: 'Rule updated successfully', rule });
+    } catch (err) {
+      console.error(err.message);
+      res.status(500).send('Server error');
     }
-
-    rule.value = value;
-
-    await rule.save();
-    res.json({ message: 'Rule updated successfully', rule });
-  } catch (err) {
-    console.error(err.message);
-    res.status(500).send('Server error');
-  }
-};
+  };
+  
 
 // Delete a rule by parameter
-exports.deleteRuleByParameter = async (req, res) => {
-  const { parameter } = req.params;
-  const { type } = req.body;
-
-  try {
-    const rule = await Rule.findOne({ user: req.user.id, parameter, type });
-
-    if (!rule) {
-      return res.status(404).json({ message: 'Rule not found' });
+exports.deleteRuleByCondition = async (req, res) => {
+    const { condition } = req.params;
+  
+    try {
+      const rule = await Rule.findOne({ user: req.user.id, condition });
+  
+      if (!rule) {
+        return res.status(404).json({ message: 'Rule not found' });
+      }
+  
+      await rule.remove();
+      res.json({ message: 'Rule deleted successfully' });
+    } catch (err) {
+      console.error(err.message);
+      res.status(500).send('Server error');
     }
-
-    await rule.remove();
-    res.json({ message: 'Rule deleted successfully' });
-  } catch (err) {
-    console.error(err.message);
-    res.status(500).send('Server error');
-  }
-};
+  };
+  
 
 // Get all rules for the user
 exports.getRules = async (req, res) => {
-  try {
-    const rules = await Rule.find({ user: req.user.id });
-    res.json(rules);
-  } catch (err) {
-    console.error(err.message);
-    res.status(500).send('Server error');
-  }
-};
+    try {
+      const rules = await Rule.find({ user: req.user.id });
+      res.json(rules);
+    } catch (err) {
+      console.error(err.message);
+      res.status(500).send('Server error');
+    }
+  };
+  
 
-// Check if a sentence satisfies all user-defined rules
-// Check if a sentence satisfies all user-defined rules
-exports.checkSentence = async (req, res) => {
+  exports.checkSentence = async (req, res) => {
     const { sentence } = req.body;
   
+    if (!sentence || typeof sentence !== 'string') {
+      return res.status(400).json({ error: 'Invalid input: sentence is required and must be a string' });
+    }
+  
     try {
-      // Convert sentence to capital case (all uppercase)
+      // Convert sentence to uppercase
       const formattedSentence = sentence.toUpperCase();
   
       // Fetch all rules for the authenticated user
       const rules = await Rule.find({ user: req.user.id });
   
-      // Array to store details of failing rules
-      const failedRules = [];
+      // Initialize letterCounts with A-Z set to 0
+      const letterCounts = {};
+      for (let i = 65; i <= 90; i++) { // ASCII codes for A-Z
+        letterCounts[String.fromCharCode(i)] = 0;
+      }
+  
+      // Count occurrences of each letter
+      for (let char of formattedSentence) {
+        if (/[A-Z]/.test(char)) {
+          letterCounts[char] = (letterCounts[char] || 0) + 1;
+        }
+      }
   
       // Check each rule against the formatted sentence
-      const ruleChecks = rules.map(rule => {
-        const isRuleSatisfied = checkRule(rule, formattedSentence);
+      const failedRules = [];
+      for (const rule of rules) {
+        const isRuleSatisfied = evaluateCondition(rule.condition, letterCounts);
         if (!isRuleSatisfied) {
-          failedRules.push({ type: rule.type, parameter: rule.parameter, value: rule.value });
+          failedRules.push({ condition: rule.condition });
         }
-        return isRuleSatisfied;
-      });
+      }
   
-      // Determine if all rules are satisfied
-      const allRulesSatisfied = ruleChecks.every(check => check);
+      const allRulesSatisfied = failedRules.length === 0;
   
       if (allRulesSatisfied) {
         res.json({ sentence, allRulesSatisfied });
@@ -123,20 +130,30 @@ exports.checkSentence = async (req, res) => {
       res.status(500).send('Server error');
     }
   };
-
-// Helper function to check if a rule is satisfied by a sentence
-function checkRule(rule, sentence) {
-  // Implement your logic to check if the sentence satisfies the rule
-  // Example logic (modify as per your DSL):
-  if (rule.type === 'min') {
-    const regex = new RegExp(`${rule.parameter}`, 'gi');
-    const matches = sentence.match(regex) || [];
-    return matches.length >= rule.value;
-  } else if (rule.type === 'max') {
-    const regex = new RegExp(`${rule.parameter}`, 'gi');
-    const matches = sentence.match(regex) || [];
-    return matches.length <= rule.value;
+  
+  // Helper function to evaluate a condition
+  function evaluateCondition(condition, letterCounts) {
+    const vars = {};
+  
+    // Populate vars with letter counts
+    for (const [key, value] of Object.entries(letterCounts)) {
+      vars[key] = Number(value); // Ensure all values are numbers
+    }
+  
+    // Attach math.js functions to the context
+    const context = {
+      ...vars,
+      min,
+      max,
+      sum
+    };
+  
+    try {
+      return evaluate(condition, context);
+    } catch (err) {
+      console.error(`Error evaluating condition: ${condition}`, err);
+      return false;
+    }
   }
-  return true; // Default to true if rule type is not recognized
-}
+
 

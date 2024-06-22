@@ -11,7 +11,7 @@ const {
 // Routes for managing classification rules
 router.post('/', authMiddleware, createRule);
 router.get('/rules', authMiddleware, getRules);
-router.put('/:parameter/:type', authMiddleware, updateRuleByParameter);
-router.delete('/:parameter/:type', authMiddleware, deleteRuleByParameter);
+// router.put('/rules/:parameter', authMiddleware, updateRuleByParameter);
+// router.delete('/:parameter', authMiddleware, deleteRuleByParameter);
 
 module.exports = router;

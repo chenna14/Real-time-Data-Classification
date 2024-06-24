@@ -1,0 +1,12 @@
+//to add rules
+
+//http://localhost:3000/api/classification
+
+// to check validity
+
+// http://localhost:3000/api/check-sentence
+
+// {
+//     "sentence":"Chenna Keshavd"
+// }
+  
